@@ -1,0 +1,52 @@
+import Course from "../models/Course.js";
+import redisClient from "../redisClient.js";
+
+export const advancedSearch = async (req, res) => {
+    try {
+        const { keyword, category, level, minPrice, maxPrice, minRating } = req.query;
+
+        // Create unique cache key
+        const cacheKey = JSON.stringify(req.query);
+
+        // Check Redis cache
+        const cachedData = await redisClient.get(cacheKey);
+        if (cachedData) {
+            console.log("Serving from Cache");
+            return res.status(200).json(JSON.parse(cachedData));
+        }
+
+        // MongoDB Query Filter
+        let filter = {};
+
+        if (keyword)
+            filter.title = { $regex: keyword, $options: "i" };
+
+        if (category)
+            filter.category = category;
+
+        if (level)
+            filter.level = level;
+
+        if (minRating)
+            filter.rating = { $gte: Number(minRating) };
+
+        if (minPrice || maxPrice)
+            filter.price = {
+                ...(minPrice && { $gte: Number(minPrice) }),
+                ...(maxPrice && { $lte: Number(maxPrice) })
+            };
+
+        // Fetch from DB
+        const courses = await Course.find(filter).sort({ createdAt: -1 });
+
+        // Store in Redis Cache for 10 minutes
+        await redisClient.setEx(cacheKey, 600, JSON.stringify(courses));
+
+        console.log("Serving from Database");
+        res.status(200).json(courses);
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Server Error" });
+    }
+};
