@@ -1,0 +1,68 @@
+import { GoogleGenerativeAI } from "google-genai";
+
+// Initialize Gemini
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+// Mock courses (replace with DB)
+const courses = [
+  { id: 1, title: "Intro to Python", desc: "Beginner Python programming.", seatsTotal: 100, seatsFilled: 90 },
+  { id: 2, title: "Data Science with Python", desc: "ML, pandas, numpy, data science.", seatsTotal: 50, seatsFilled: 50 },
+  { id: 3, title: "Advanced Machine Learning", desc: "Neural networks, deep learning.", seatsTotal: 30, seatsFilled: 10 },
+];
+
+// Seats remaining function
+function seatsRemaining(course) {
+  return course.seatsTotal - course.seatsFilled;
+}
+
+// Filter courses having seats remaining
+const availableCourses = courses.filter(course => seatsRemaining(course) > 0);
+
+// Convert embeddings to a usable vector
+function toVector(values) {
+  return Float32Array.from(values.map(v => parseFloat(v)));
+}
+
+// Cosine similarity function
+function cosineSimilarity(A, B) {
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < A.length; i++) {
+    dot += A[i] * B[i];
+    normA += A[i] * A[i];
+    normB += B[i] * B[i];
+  }
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+// Generate course recommendations
+export async function recommendCourses(userQuery) {
+  try {
+    // 1. Create embeddings for course descriptions
+    const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
+
+    const courseDescriptions = availableCourses.map(c => c.desc);
+
+    const courseEmbedResponse = await embeddingModel.embedContent(courseDescriptions);
+    const courseEmbeddings = courseEmbedResponse.embeddings.map(e => toVector(e.values));
+
+    // 2. Embed the user query
+    const queryEmbedResponse = await embeddingModel.embedContent([userQuery]);
+    const queryEmbedding = toVector(queryEmbedResponse.embeddings[0].values);
+
+    // 3. Compute similarity for each course
+    const scoredCourses = availableCourses.map((course, index) => ({
+      course,
+      score: cosineSimilarity(queryEmbedding, courseEmbeddings[index])
+    }));
+
+    // 4. Sort descending
+    scoredCourses.sort((a, b) => b.score - a.score);
+
+    // TOP 3 COURSES
+    return scoredCourses.slice(0, 3);
+
+  } catch (err) {
+    console.error("Error:", err);
+    throw err;
+  }
+}
