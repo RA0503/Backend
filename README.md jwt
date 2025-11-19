@@ -1,1 +1,40 @@
+const jwt = require('jsonwebtoken'); // Store your secret key securely in environment variables
+const jwtSecretKey = process.env.JWT_SECRET; 
+
+const authenticateJWT = (req, res, next) => {
+    // Get the authorization header
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader) {
+        return res.status(401).json({ message: 'Authorization header missing' }); // 401 Unauthorized
+    }
+
+    // Extract the token from the "Bearer <token>" format
+const token = authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ message: 'Token missing' }); // 401 Unauthorized
+    }
+
+    try {
+        // Verify the token using the secret key
+        const decoded = jwt.verify(token, jwtSecretKey);
+        // Attach the decoded user information to the request object
+        req.user = decoded; 
+        next(); // Call next to pass control to the next handler } catch (err) {
+        return res.status(403).json({ message: 'Invalid token' }); // 403 Forbidden
+    }
+};
+
+module.exports = authenticateJWT;
+Step 2: Create an Admin-Specific Middleware 
+Add a second middleware that specifically checks if the decoded user has the admin role (this assumes you added a role claim to the JWT payload when generating the token during login/registration).
+// In a file named 'adminMiddleware.js' or added to 'authMiddleware.js'
+const authorizeAdmin = (req, res, next) => {
+    // req.user is available from the authenticateJWT middleware
+    if (req.user && req.user.role === 'admin') {
+        next(); // User is an admin, allow access
+    } else {
+        res.status(403).json({ message: 'Access denied. Admin only.' }); // 403 Forbidden
+    }
 
