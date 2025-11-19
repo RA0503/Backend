@@ -1,0 +1,77 @@
+branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Get Code
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2. Setup Node (for backend JS) — replace with Java if needed
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      # 3. Install Dependencies
+      - name: Install packages
+        run: npm install
+
+      # 4. Lint Code
+      - name: Run Linter
+        run: npm run lint
+
+      # 5. Run Tests
+      - name: Run Tests
+        run: npm test
+
+      # 6. Build Project
+      - name: Build backend
+        run: npm run build
+
+      # 7. Upload Build Artifact
+      - name: Archive build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-build
+          path: dist/
+
+  deploy:
+    needs: build-test
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      # 1. Download Artifact
+      - name: Download built project
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-build
+
+      # 2. Deploy with Docker
+      - name: Build Docker Image
+        run: |
+          docker build -t my-backend:latest .
+
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+
+      - name: Push Docker Image
+        run: docker push my-backend:latest
+
+      # 3. Deploy to Server (SSH)
+      - name: Deploy to Production Server
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            docker pull my-backend:latest
+            docker stop backend || true
+            docker rm backend || true
+            docker run -d -p 8000:8000 --name backend my-backend:latest
